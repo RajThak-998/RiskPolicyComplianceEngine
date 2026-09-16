@@ -83,6 +83,29 @@
   - k=200 — too flat, high-ranked items barely differentiated. Rejected.
 - **Trade-offs & Latency/Memory Impact:** Pure arithmetic — O(n) where n = unique IDs across both lists. No external dependencies. At top-K=10 from each list, n ≤ 20, trivially fast.
 
+---
+
+## [ADR-009] Async psycopg Throughout — No Sync Calls in Async Functions
+
+- **Context & Problem:** Using `psycopg.connect()` (sync) inside `async def` functions blocks the event loop. In a gateway handling concurrent SSE streams, this would serialize all DB queries — defeating asyncio entirely.
+- **Decision Taken:** Use `psycopg.AsyncConnection.connect()` for all DB access inside async functions. Connections are opened per-request and closed in `finally` blocks. For production, upgrade to `AsyncConnectionPool`.
+- **Alternatives Considered:**
+  - `asyncio.to_thread()` wrapper around sync psycopg — works but adds thread-pool overhead. Rejected.
+  - Sync psycopg in async functions — blocks event loop, serializes queries. Rejected (this was the bug we caught).
+- **Trade-offs & Latency/Memory Impact:** Slightly more connection overhead per request (vs. pool). At <100 concurrent requests, negligible. Pool will be added in Phase 4 for the gateway.
+
+---
+
+## [ADR-010] `dict_row` Factory for Named Column Access
+
+- **Context & Problem:** psycopg default returns tuples (`r[0], r[1], ...`). With 7+ columns and multiple SELECT patterns, index tracking is error-prone (the KeyError we caught proves it).
+- **Decision Taken:** `row_factory=dict_row` — access columns by name (`r["id"]`, `r["content"]`) everywhere.
+- **Alternatives Considered:**
+  - Named tuples — more verbose, no stdlib support in psycopg. Rejected.
+  - Index constants (`COL_ID = 0, COL_CONTENT = 5`) — maintainable but ugly. Rejected.
+- **Trade-offs & Latency/Memory Impact:** Negligible — dict_row is the standard psycopg approach. One-line setting change.
+
+
 
 - **Context & Problem:** During rapid iteration in Phase 1-3, schema changes are frequent. Migrations add overhead.
 - **Decision Taken:** `01_init_db.py` executes `DROP TABLE IF EXISTS policy_chunks` before CREATE. This is **development-only** — production will need a migration tool (Alembic or Flyway).

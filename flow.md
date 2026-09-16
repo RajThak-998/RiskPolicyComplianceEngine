@@ -108,7 +108,16 @@ Output must show `|` separated Markdown, not collapsed text.
 
 ---
 
-## Phase 2 — COMPLETE (Pending User Implementation)
+## Phase 2 — COMPLETE ✅
+
+- RRF + dense + sparse hybrid search working
+- Jurisdiction leak test passes (all results match filter)
+- 10 results retrieved with proper ranking (Dist + RRF scores)
+- Async connections throughout (no event loop blocking)
+
+---
+
+## Phase 2 — COMPLETE ✅
 
 ### Phase 2 Execution Flow
 
