@@ -14,11 +14,13 @@ import re
 import glob
 from typing import Optional
 
+from dotenv import load_dotenv
 import pdfplumber
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import psycopg
 
+load_dotenv()
 
 from init_db import init_db 
 
@@ -28,15 +30,20 @@ from init_db import init_db
 # ── Configuration ──────────────────────────────────────────────────
 
 RAW_POLICIES_DIR = os.getenv("RAW_POLICIES_DIR", "raw_policies")
-CHUNK_WORDS = 70          
-CHUNK_OVERLAP = 15        
+CHUNK_WORDS = 120
+CHUNK_OVERLAP = 40
 EMBED_BATCH_SIZE = 32
 PG_DSN = os.getenv("PG_DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/risk_db")
 
 # ── Clause Header Extraction ───────────────────────────────────────
 
 CLAUSE_PATTERN = re.compile(
-    r'(Section\s+\d+[\.\d]*[a-z]?\(?[a-z]?\)?|Article\s+\d+|Clause\s+\d+[\.\d]*)',
+    r'('
+    r'Section\s+(?:\d+[\.\d]*[a-z]?\(?[a-z]?\)?|[IVXLCDM]+)(?:\s*[-–]\s*[A-Z][A-Z\s&/,()-]+)?'
+    r'|Article\s+(?:\d+|[IVXLCDM]+)'
+    r'|Clause\s+\d+[\.\d]*'
+    r'|Exclusions?'
+    r')',
     re.IGNORECASE,
 )
 
@@ -59,6 +66,8 @@ def serialize_table_to_markdown(table: list[list[str]]) -> str:
         return ""
 
     table = [[cell or "" for cell in row] for row in table]
+    width = len(table[0])
+    table = [row[:width] + [""] * max(0, width - len(row)) for row in table]
 
     result = "| " + " | ".join(table[0]) + " |\n"
     result += "|" + "---|" * len(table[0]) + "\n"
@@ -84,7 +93,7 @@ def extract_from_page(page, page_number: int) -> list[dict]:
                 "content": content, 
                 "page_number": page_number,
                 "is_table": True,
-                "clause_id": None, 
+                "clause_id": f"Page {page_number} Table", 
                 "source_hint": f"Table on page {page_number}",
             })
 
@@ -101,22 +110,26 @@ def extract_from_page(page, page_number: int) -> list[dict]:
             "content": " ".join(words),
             "page_number": page_number,
             "is_table": False,
-            "clause_id": extract_clause_id(" ".join(words)),
+            "clause_id": extract_clause_id(" ".join(words)) or f"Page {page_number}",
             "source_hint":f"Text on page {page_number}",
         })
 
     else:
-        for start in range(0, max(0, len(words)-CHUNK_WORDS+1), step):
+        for start in range(0, len(words), step):
             chunk_words = words[start:start+CHUNK_WORDS]
+            if not chunk_words:
+                break
             chunk = " ".join(chunk_words)
         
             results.append({
                 "content": chunk,
                 "page_number": page_number,
                 "is_table": False,
-                "clause_id": extract_clause_id(chunk),
+                "clause_id": extract_clause_id(chunk) or f"Page {page_number}",
                 "source_hint":f"Text on page {page_number}",
             })
+            if start + CHUNK_WORDS >= len(words):
+                break
 
     return results
 

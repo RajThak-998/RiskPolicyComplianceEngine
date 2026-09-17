@@ -12,6 +12,9 @@ Usage: python 01_init_db.py
 
 import os
 import psycopg
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Connection Configuration ──────────────────────────────────────────
 
