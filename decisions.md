@@ -105,6 +105,45 @@
   - Index constants (`COL_ID = 0, COL_CONTENT = 5`) — maintainable but ugly. Rejected.
 - **Trade-offs & Latency/Memory Impact:** Negligible — dict_row is the standard psycopg approach. One-line setting change.
 
+---
+
+## [ADR-011] AsyncConnectionPool — Reuse, Don't Recreate
+
+- **Context & Problem:** Each search function previously opened a brand-new `AsyncConnection`. At 200 concurrent requests × 2 searches = 400 simultaneous connections, PostgreSQL's `max_connections` (default 100) is exceeded and connections are rejected.
+- **Decision Taken:** `psycopg_pool.AsyncConnectionPool` with `min_size=2`, `max_size=10`. Connections are reused across requests. Pool lazily initializes on first use, cleanly shuts down at exit.
+- **Alternatives Considered:**
+  - Per-request `AsyncConnection` — breaks at scale (this was the original bug). Rejected.
+  - `asyncio.to_thread()` with sync connections — works but wastes threads. Rejected.
+  - Hard-coded connection limit via `Semaphore` — doesn't solve DB-side exhaustion. Rejected.
+- **Trade-offs & Latency/Memory Impact:** Pool adds ~5ms warmup on first use (negligible after that). Memory: 10 connections × ~256KB each = ~2.5MB. Net positive: 400-request concurrency handled by 10 physical connections.
+
+---
+
+## [ADR-012] Cross-Encoder Reranking Before LLM
+
+- **Context & Problem:** RRF returns top-15 candidates by combined rank. Some may be topically related but factually irrelevant (e.g., discusses the topic but doesn't answer the specific question). Feeding these to the LLM wastes tokens and increases hallucination risk.
+- **Decision Taken:** Cross-Encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`) reranks top-15 → top-3 by relevance. Only top-3 reach the LLM.
+- **Alternatives Considered:**
+  - Skip reranking, feed top-15 to LLM — wastes context window, increases hallucination. Rejected.
+  - Embedding-based reranking — same signal as Phase 2, no improvement. Rejected.
+  - Cross-Encoder on full corpus — ~100x too slow. Rejected.
+- **Trade-offs & Latency/Memory Impact:** Cross-Encoder is CPU-bound and adds ~200-500ms for top-15 pairs (vs. 5ms for embedding search). But it reduces LLM input from ~15K to ~3K tokens, saving LLM latency and cost. Net latency neutral, quality significantly improved.
+
+---
+
+## [ADR-013] LLM Output Enforcement via Pydantic + `response_format`
+
+- **Context & Problem:** LLMs return freeform text by default. For compliance audit verdicts, we need structured fields (status, financial_limit, citations) — not prose. Hallucinated clause numbers or fabricated limits are legal liabilities.
+- **Decision Taken:** Two-layer enforcement:
+  1. `response_format={"type": "json_object"}` — Groq API forces JSON output
+  2. `AuditVerdict.model_validate_json()` — Pydantic validates types, enforces non-empty citations, valid literals
+- **Alternatives Considered:**
+  - Parse JSON with `json.loads()` + manual validation — no type safety, misses edge cases. Rejected.
+  - Fine-tune LLM to output schema — expensive, model-specific, still error-prone. Rejected.
+- **Trade-offs & Latency/Memory Impact:** Negligible — Pydantic validation is O(n) fields. One failed parse → ValueError → can retry or return OUT_OF_SCOPE. Adds ~1ms per validation.
+
+
+
 
 
 - **Context & Problem:** During rapid iteration in Phase 1-3, schema changes are frequent. Migrations add overhead.

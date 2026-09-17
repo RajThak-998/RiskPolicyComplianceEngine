@@ -113,7 +113,8 @@ Output must show `|` separated Markdown, not collapsed text.
 - RRF + dense + sparse hybrid search working
 - Jurisdiction leak test passes (all results match filter)
 - 10 results retrieved with proper ranking (Dist + RRF scores)
-- Async connections throughout (no event loop blocking)
+- `AsyncConnectionPool` — lazy init, min=2/max=10, clean shutdown
+- `psycopg_pool` for connection multiplexing
 
 ---
 
@@ -181,15 +182,54 @@ Output must show `|` separated Markdown, not collapsed text.
 
 ---
 
-## Phase 3 — Will Add: Cross-Encoder & Pydantic Citation Flow
+## Phase 3 — COMPLETE (Pending User Implementation)
 
-_TBD after Phase 3 completion._
+### Phase 3 Execution Flow
 
----
+```
+┌─────────────────┐
+│ RRF Top-15      │  ← Output from Phase 2
+│ Candidates      │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Cross-Encoder    │  ← cross-encoder/ms-marco-MiniLM-L-6-v2
+│ Rerank           │  Pairs: (query, chunk.content)
+│ Top-3            │  Score: relevance (higher = better)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Build Grounded   │  Source block format + JSON schema prompt
+│ Prompt           │  "Answer strictly from sources only"
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ LLM Stream       │  Groq (llama-3.1-8b-instant) or Ollama
+│ (temperature=0)  │  Accumulate tokens → JSON → AuditVerdict
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Pydantic Parse   │  AuditVerdict.model_validate_json()
+│ + Verify         │  Citation.exact_quote ⊆ chunk.content
+│                  │  Failures = hallucination detected
+└─────────────────┘
+```
 
-## Phase 3 — Will Add: Cross-Encoder & Pydantic Citation Flow
+### Phase 3 Component Responsibilities
 
-_TBD after Phase 3 completion._
+| Component | Responsibility |
+|---|---|
+| `rerank_candidates()` | Cross-Encoder scoring on (query, context) pairs → top-3 |
+| `build_grounded_prompt()` | Source block formatting + JSON schema instruction |
+| `stream_llm_verdict()` | Groq/Ollama streaming, token accumulation, JSON parse |
+| `verify_citations()` | Substring check: `exact_quote` ∈ `chunk.content` |
+| `run_verdict_pipeline()` | Sequential orchestration of all steps |
+| `Citation` (Pydantic) | Document/page/clause/quote contract |
+| `AuditVerdict` (Pydantic) | Status/financial/deductible/reasoning/citations |
 
 ---
 
