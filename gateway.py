@@ -50,7 +50,7 @@ CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "86400"))
 CACHE_DISTANCE_THRESHOLD = float(os.getenv("CACHE_DISTANCE_THRESHOLD", "0.30"))
 EMBED_DIM = 384
 LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
-RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
+RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "12"))
 RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "50"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 LEGACY_SESSION_ID = "legacy"
@@ -511,8 +511,11 @@ async def audit_stream(req: AuditRequest, request: Request) -> Response:
     if not req.stream:
         verdict = await call_llm_verdict(prompt)
         grounding_failures = verify_citations(verdict, candidates)
-        if not grounding_failures:
-            await persist_policy_cache(req, verdict, query_vector)
+        # Always cache — grounding failures are surfaced in the response for
+        # transparency, but they must not silently prevent caching. Without this,
+        # any response with a hallucination warning would never hit the cache,
+        # causing every repeated query to re-run the full RAG pipeline.
+        await persist_policy_cache(req, verdict, query_vector)
 
         return JSONResponse(
             response_payload(
@@ -552,8 +555,8 @@ async def audit_stream(req: AuditRequest, request: Request) -> Response:
                     continue
 
                 grounding_failures = verify_citations(verdict, candidates)
-                if not grounding_failures:
-                    await persist_policy_cache(req, verdict, query_vector)
+                # Always cache regardless of grounding failures — see comment above.
+                await persist_policy_cache(req, verdict, query_vector)
 
                 yield _sse("verdict", response_payload(
                     verdict=verdict,

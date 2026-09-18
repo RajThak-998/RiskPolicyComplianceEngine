@@ -7,57 +7,180 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+
+  <!-- ═══════════════════ TOPBAR ═══════════════════ -->
   <header class="topbar">
     <a class="brand" href="/" aria-label="Policy Desk home">
       <span class="brand-mark">PD</span>
       <span><strong>Policy Desk</strong><small>Grounded risk audit</small></span>
     </a>
-    <div class="top-status"><span class="status-dot"></span><span id="serviceStatus">Connecting</span></div>
+    <div class="top-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="serviceStatus">Connecting…</span>
+    </div>
   </header>
 
+  <!-- ═══════════════════ MAIN ═══════════════════ -->
   <main class="shell">
+
+    <!-- Hero -->
     <section class="intro">
       <p class="eyebrow">Risk policy intelligence</p>
       <h1>Ask your policy<br><em>what it really says.</em></h1>
-      <p class="lede">Upload a policy, let the evidence index settle, then interrogate it with cited answers instead of guesses.</p>
+      <p class="lede">Upload a PDF policy, watch the evidence pipeline run in real-time, then interrogate it with fully cited answers — not guesses.</p>
     </section>
 
+    <!-- Step Tracker -->
+    <div class="steps-bar" id="stepsBar">
+      <div class="step" id="step1" data-step="1">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-label">Upload Policy</div>
+          <div class="step-desc">Choose a PDF to analyse</div>
+        </div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step" id="step2" data-step="2">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-label">Ingestion Pipeline</div>
+          <div class="step-desc">Chunking · Embedding · Indexing</div>
+        </div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step" id="step3" data-step="3">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-label">Audit Ready</div>
+          <div class="step-desc">Ask anything about the policy</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Workspace -->
     <section class="workspace">
+
+      <!-- ── LEFT RAIL: upload + pipeline status ── -->
       <aside class="rail">
-        <div class="panel-heading"><span>01</span><h2>Policy set</h2></div>
+        <div class="panel-heading">
+          <span>01</span><h2>Policy set</h2>
+        </div>
+
+        <!-- Drop zone -->
         <div id="dropzone" class="dropzone">
           <input id="fileInput" type="file" accept="application/pdf" hidden>
           <div class="upload-icon">+</div>
-          <strong>Drop a PDF here</strong>
-          <span>or choose a file from your device</span>
+          <strong id="dropzoneTitle">Drop a PDF here</strong>
+          <span id="dropzoneSub">or choose a file from your device</span>
           <button id="chooseFile" class="button button-dark" type="button">Choose PDF</button>
-          <small>PDF only, up to 25 MB</small>
+          <small>PDF only · up to 25 MB</small>
         </div>
+
+        <!-- Upload form (revealed after file is selected) -->
         <form id="uploadForm" class="upload-form" hidden>
-          <label>Document title<input id="titleInput" name="title" required maxlength="160" placeholder="e.g. Property risk policy"></label>
-          <label>Policy type<input id="typeInput" name="policy_type" maxlength="80" value="Unknown"></label>
-          <button class="button button-accent" type="submit">Index policy <span>-></span></button>
+          <label>Document title
+            <input id="titleInput" name="title" required maxlength="160" placeholder="e.g. Property risk policy">
+          </label>
+          <label>Policy type
+            <input id="typeInput" name="policy_type" maxlength="80" value="Unknown">
+          </label>
+          <button class="button button-accent" type="submit" id="uploadBtn">
+            Index policy <span>→</span>
+          </button>
         </form>
+
+        <!-- Pipeline status (shown during ingestion) -->
+        <div id="pipelineStatus" class="pipeline-status" hidden>
+          <div class="pipeline-title">⚙ Pipeline running</div>
+          <ul class="pipeline-steps" id="pipelineSteps">
+            <li class="ps-item" id="ps-upload">
+              <span class="ps-icon">⏳</span>
+              <span class="ps-text">Uploading file to server</span>
+            </li>
+            <li class="ps-item" id="ps-chunk">
+              <span class="ps-icon">⏳</span>
+              <span class="ps-text">Chunking &amp; extracting tables</span>
+            </li>
+            <li class="ps-item" id="ps-embed">
+              <span class="ps-icon">⏳</span>
+              <span class="ps-text">Generating embeddings</span>
+            </li>
+            <li class="ps-item" id="ps-index">
+              <span class="ps-icon">⏳</span>
+              <span class="ps-text">Indexing into PostgreSQL + Redis</span>
+            </li>
+            <li class="ps-item" id="ps-ready">
+              <span class="ps-icon">⏳</span>
+              <span class="ps-text">Verifying index &amp; signalling ready</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Indexed document list -->
         <div id="documents" class="documents"></div>
-        <div class="scope-note"><span class="lock">*</span><span>This tutorial workspace uses <b>Unknown</b> jurisdiction and <b>2024</b> effective year.</span></div>
+
+        <div class="scope-note">
+          <span class="lock">*</span>
+          <span>Workspace uses <b>Unknown</b> jurisdiction · <b>2024</b> effective year.</span>
+        </div>
       </aside>
 
+      <!-- ── RIGHT: conversation ── -->
       <section class="conversation">
-        <div class="panel-heading"><span>02</span><h2>Audit conversation</h2><span id="cacheBadge" class="cache-badge">Waiting for a policy</span></div>
+        <div class="panel-heading conversation-heading">
+          <span>02</span>
+          <h2>Audit conversation</h2>
+          <!-- Cache badge -->
+          <div class="badge-group" id="badgeGroup">
+            <span id="cacheBadge" class="cache-badge">Waiting for policy</span>
+          </div>
+        </div>
+
+        <!-- Empty state -->
         <div id="emptyState" class="empty-state">
           <div class="signal">?</div>
-          <h2>Your evidence room is empty</h2>
-          <p>Upload a policy on the left. Retrieval, reranking, citation checks, and cache setup will run automatically.</p>
+          <h2>Evidence room is empty</h2>
+          <p>Upload a policy on the left. Retrieval, reranking, citation checks, and Redis cache setup will run automatically. You'll be notified when everything is ready.</p>
         </div>
+
+        <!-- Message thread -->
         <div id="messages" class="messages" hidden></div>
+
+        <!-- Query form -->
         <form id="questionForm" class="question-form" hidden>
-          <textarea id="questionInput" rows="2" minlength="5" maxlength="2000" placeholder="Ask about a limit, exclusion, deductible, or condition..." required></textarea>
-          <button class="send-button" type="submit" aria-label="Ask question">Send <span>-></span></button>
+          <div class="input-wrap">
+            <textarea
+              id="questionInput"
+              rows="2"
+              minlength="5"
+              maxlength="2000"
+              placeholder="Ask about a limit, exclusion, deductible, or condition…"
+              required
+            ></textarea>
+            <div class="input-hint" id="inputHint"></div>
+          </div>
+          <button class="send-button" type="submit" id="sendBtn" aria-label="Ask question">
+            Send <span>→</span>
+          </button>
         </form>
       </section>
-    </section>
+
+    </section><!-- /workspace -->
   </main>
+
+  <!-- Toast -->
   <div id="toast" class="toast" role="status"></div>
+
+  <!-- Ready signal overlay (pops up when ingestion completes) -->
+  <div id="readyOverlay" class="ready-overlay" hidden>
+    <div class="ready-card">
+      <div class="ready-icon">✓</div>
+      <h2>Policy indexed!</h2>
+      <p>All chunks are embedded and the semantic cache is primed.<br>You can now ask questions about this policy.</p>
+      <button class="button button-accent" id="readyDismiss" style="max-width:220px">Start auditing →</button>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>
