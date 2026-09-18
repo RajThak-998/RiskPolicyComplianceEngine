@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Policy Desk | Risk Audit Engine</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Policy Desk home">
+      <span class="brand-mark">PD</span>
+      <span><strong>Policy Desk</strong><small>Grounded risk audit</small></span>
+    </a>
+    <div class="top-status"><span class="status-dot"></span><span id="serviceStatus">Connecting</span></div>
+  </header>
+
+  <main class="shell">
+    <section class="intro">
+      <p class="eyebrow">Risk policy intelligence</p>
+      <h1>Ask your policy<br><em>what it really says.</em></h1>
+      <p class="lede">Upload a policy, let the evidence index settle, then interrogate it with cited answers instead of guesses.</p>
+    </section>
+
+    <section class="workspace">
+      <aside class="rail">
+        <div class="panel-heading"><span>01</span><h2>Policy set</h2></div>
+        <div id="dropzone" class="dropzone">
+          <input id="fileInput" type="file" accept="application/pdf" hidden>
+          <div class="upload-icon">+</div>
+          <strong>Drop a PDF here</strong>
+          <span>or choose a file from your device</span>
+          <button id="chooseFile" class="button button-dark" type="button">Choose PDF</button>
+          <small>PDF only, up to 25 MB</small>
+        </div>
+        <form id="uploadForm" class="upload-form" hidden>
+          <label>Document title<input id="titleInput" name="title" required maxlength="160" placeholder="e.g. Property risk policy"></label>
+          <label>Policy type<input id="typeInput" name="policy_type" maxlength="80" value="Unknown"></label>
+          <button class="button button-accent" type="submit">Index policy <span>-></span></button>
+        </form>
+        <div id="documents" class="documents"></div>
+        <div class="scope-note"><span class="lock">*</span><span>This tutorial workspace uses <b>Unknown</b> jurisdiction and <b>2024</b> effective year.</span></div>
+      </aside>
+
+      <section class="conversation">
+        <div class="panel-heading"><span>02</span><h2>Audit conversation</h2><span id="cacheBadge" class="cache-badge">Waiting for a policy</span></div>
+        <div id="emptyState" class="empty-state">
+          <div class="signal">?</div>
+          <h2>Your evidence room is empty</h2>
+          <p>Upload a policy on the left. Retrieval, reranking, citation checks, and cache setup will run automatically.</p>
+        </div>
+        <div id="messages" class="messages" hidden></div>
+        <form id="questionForm" class="question-form" hidden>
+          <textarea id="questionInput" rows="2" minlength="5" maxlength="2000" placeholder="Ask about a limit, exclusion, deductible, or condition..." required></textarea>
+          <button class="send-button" type="submit" aria-label="Ask question">Send <span>-></span></button>
+        </form>
+      </section>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

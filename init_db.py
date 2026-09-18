@@ -39,6 +39,7 @@ def init_db() -> None:
         cur.execute("""
             CREATE TABLE policy_chunks (
                 id             BIGSERIAL PRIMARY KEY,
+                session_id     TEXT NOT NULL DEFAULT 'legacy',
                 document_id    TEXT NOT NULL,
                 policy_type    TEXT NOT NULL,
                 jurisdiction   TEXT NOT NULL,
@@ -73,6 +74,11 @@ def init_db() -> None:
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_policy_chunks_metadata
             ON policy_chunks (jurisdiction, effective_year, policy_type)
+        """)
+
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_policy_chunks_session
+            ON policy_chunks (session_id)
         """)
 
     conn.close()

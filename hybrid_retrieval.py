@@ -37,6 +37,7 @@ RRF_K = 60
 DENSE_TOP_K = 50
 SPARSE_TOP_K = 50
 NEIGHBOR_WINDOW = 1
+LEGACY_SESSION_ID = "legacy"
 POOL_MIN = 2
 POOL_MAX = 10
 
@@ -122,6 +123,7 @@ async def async_filtered_dense_search(
     jurisdiction: str,
     effective_year: int,
     policy_type: str,
+    session_id: str = LEGACY_SESSION_ID,
     top_k: int = DENSE_TOP_K,
 ) -> list[dict]:
     pool = await get_pool()
@@ -132,13 +134,17 @@ async def async_filtered_dense_search(
                        jurisdiction,
                        (embedding <=> %s::vector(384)) AS distance
                 FROM policy_chunks
-                WHERE jurisdiction = %s AND effective_year = %s AND policy_type = %s
+                                WHERE session_id = %s
+                                    AND jurisdiction = %s AND effective_year = %s
+                                    AND (%s = 'All' OR policy_type = %s)
                 ORDER BY distance ASC
                 LIMIT %s;
             """, (
                 query_vector.tolist(),
+                session_id,
                 jurisdiction,
                 effective_year,
+                policy_type,
                 policy_type,
                 top_k,
             ))
@@ -165,6 +171,7 @@ async def async_filtered_sparse_search(
     jurisdiction: str,
     effective_year: int,
     policy_type: str,
+    session_id: str = LEGACY_SESSION_ID,
     top_k: int = SPARSE_TOP_K,
 ) -> list[dict]:
     pool = await get_pool()
@@ -188,9 +195,10 @@ async def async_filtered_sparse_search(
                            + COALESCE(ts_rank(content_tsv, soft_query), 0.0)
                        ) AS rank
                 FROM policy_chunks, queries
-                WHERE jurisdiction = %(jurisdiction)s
+                                WHERE session_id = %(session_id)s
+                                    AND jurisdiction = %(jurisdiction)s
                   AND effective_year = %(effective_year)s
-                  AND policy_type = %(policy_type)s
+                                    AND (%(policy_type)s = 'All' OR policy_type = %(policy_type)s)
                   AND (
                       content_tsv @@ strict_query
                       OR (soft_query IS NOT NULL AND content_tsv @@ soft_query)
@@ -203,6 +211,7 @@ async def async_filtered_sparse_search(
                 "jurisdiction": jurisdiction,
                 "effective_year": effective_year,
                 "policy_type": policy_type,
+                "session_id": session_id,
                 "top_k": top_k,
             })
             rows = await cur.fetchall()
@@ -226,6 +235,7 @@ async def fetch_neighbor_chunks(
     jurisdiction: str,
     effective_year: int,
     policy_type: str,
+    session_id: str = LEGACY_SESSION_ID,
     window: int = NEIGHBOR_WINDOW,
 ) -> list[dict]:
     if not candidates or window < 1:
@@ -249,15 +259,18 @@ async def fetch_neighbor_chunks(
                 SELECT id, document_id, page_number, clause_id, is_table, content,
                        jurisdiction
                 FROM policy_chunks
-                WHERE id = ANY(%s)
+                                WHERE id = ANY(%s)
+                                    AND session_id = %s
                   AND jurisdiction = %s
                   AND effective_year = %s
-                  AND policy_type = %s
+                  AND (%s = 'All' OR policy_type = %s)
                 ORDER BY id ASC;
             """, (
                 neighbor_ids,
+                session_id,
                 jurisdiction,
                 effective_year,
+                policy_type,
                 policy_type,
             ))
             rows = await cur.fetchall()
@@ -302,12 +315,13 @@ async def retrieve_filtered(
     jurisdiction: str,
     effective_year: int,
     policy_type: str,
+    session_id: str = LEGACY_SESSION_ID,
     top_k: int = DENSE_TOP_K,
 ) -> list[dict]:
     search_k = max(top_k, DENSE_TOP_K, SPARSE_TOP_K)
     dense_results, sparse_results = await asyncio.gather(
-        async_filtered_dense_search(query_vector, jurisdiction, effective_year, policy_type, search_k),
-        async_filtered_sparse_search(query, jurisdiction, effective_year, policy_type, search_k),
+        async_filtered_dense_search(query_vector, jurisdiction, effective_year, policy_type, session_id, search_k),
+        async_filtered_sparse_search(query, jurisdiction, effective_year, policy_type, session_id, search_k),
     )
     merged_results = reciprocal_rank_fusion(dense_results, sparse_results)
     focused_results = merged_results[:top_k]
@@ -316,6 +330,7 @@ async def retrieve_filtered(
         jurisdiction=jurisdiction,
         effective_year=effective_year,
         policy_type=policy_type,
+        session_id=session_id,
     )
     return dedupe_by_id(focused_results + neighbor_results)
 

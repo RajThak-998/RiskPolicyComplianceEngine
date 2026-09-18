@@ -34,6 +34,7 @@ CHUNK_WORDS = 120
 CHUNK_OVERLAP = 40
 EMBED_BATCH_SIZE = 32
 PG_DSN = os.getenv("PG_DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/risk_db")
+LEGACY_SESSION_ID = "legacy"
 
 # ── Clause Header Extraction ───────────────────────────────────────
 
@@ -161,6 +162,41 @@ def generate_embeddings(texts: list[str]) -> np.ndarray:
 
 # ── Known Boilerplate: Database Batch Insert ────────────────────────
 
+def ensure_session_schema() -> None:
+    """Add upload scoping to databases created before the upload workflow."""
+    conn = psycopg.connect(PG_DSN, autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                ALTER TABLE policy_chunks
+                ADD COLUMN IF NOT EXISTS session_id TEXT
+            """)
+            cur.execute("""
+                UPDATE policy_chunks
+                SET session_id = %s
+                WHERE session_id IS NULL
+            """, (LEGACY_SESSION_ID,))
+            cur.execute("""
+                ALTER TABLE policy_chunks
+                ALTER COLUMN session_id SET DEFAULT 'legacy'
+            """)
+            cur.execute("""
+                UPDATE policy_chunks
+                SET session_id = 'legacy'
+                WHERE session_id IS NULL
+            """)
+            cur.execute("""
+                ALTER TABLE policy_chunks
+                ALTER COLUMN session_id SET NOT NULL
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_policy_chunks_session
+                ON policy_chunks (session_id)
+            """)
+    finally:
+        conn.close()
+
+
 async def batch_insert_chunks(chunks: list[dict]) -> None:
     """Bulk insert parsed chunks into policy_chunks."""
     conn = psycopg.connect(PG_DSN)
@@ -169,10 +205,10 @@ async def batch_insert_chunks(chunks: list[dict]) -> None:
             cur.executemany(
                 """
                 INSERT INTO policy_chunks
-                    (document_id, policy_type, jurisdiction, effective_year,
+                    (session_id, document_id, policy_type, jurisdiction, effective_year,
                      page_number, clause_id, is_table, content, embedding)
                 VALUES
-                    (%(document_id)s, %(policy_type)s, %(jurisdiction)s, %(effective_year)s,
+                    (%(session_id)s, %(document_id)s, %(policy_type)s, %(jurisdiction)s, %(effective_year)s,
                      %(page_number)s, %(clause_id)s, %(is_table)s, %(content)s, %(embedding)s)
                 """,
                 chunks,
@@ -189,8 +225,15 @@ def discover_pdfs(directory: str) -> list[str]:
 
 
 
-async def ingest_single_pdf(filepath: str) -> dict:
+async def ingest_single_pdf(
+    filepath: str,
+    session_id: str = LEGACY_SESSION_ID,
+    policy_type: str = "Unknown",
+    document_title: Optional[str] = None,
+) -> dict:
+    ensure_session_schema()
     with pdfplumber.open(filepath) as pdf:
+        page_count = len(pdf.pages)
         chunks = []
 
         for page_number, page in enumerate(pdf.pages, start=1):
@@ -200,8 +243,9 @@ async def ingest_single_pdf(filepath: str) -> dict:
     document_id = os.path.basename(filepath)
 
     for chunk in chunks:
+        chunk["session_id"] = session_id
         chunk["document_id"] = document_id
-        chunk["policy_type"] = "Unknown"
+        chunk["policy_type"] = policy_type
         chunk["jurisdiction"] = "Unknown"
         chunk["effective_year"] = 2024
 
@@ -217,6 +261,9 @@ async def ingest_single_pdf(filepath: str) -> dict:
 
     return {
         "file": filepath,
+        "document_id": document_id,
+        "title": document_title or document_id,
+        "pages": page_count,
         "chunks": len(chunks),
         "tables":  tables,
     }
